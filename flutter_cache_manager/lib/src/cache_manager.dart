@@ -2,19 +2,12 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:file/file.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
-import 'package:flutter_cache_manager/src/cache_managers/base_cache_manager.dart';
 import 'package:flutter_cache_manager/src/cache_store.dart';
-import 'package:flutter_cache_manager/src/result/download_progress.dart';
-import 'package:flutter_cache_manager/src/result/file_info.dart';
-import 'package:flutter_cache_manager/src/result/file_response.dart';
 import 'package:flutter_cache_manager/src/storage/cache_object.dart';
 import 'package:flutter_cache_manager/src/web/web_helper.dart';
-import 'package:pedantic/pedantic.dart';
 import 'package:uuid/uuid.dart';
-
-import 'config/config.dart';
 
 ///Flutter Cache Manager
 ///Copyright (c) 2019 Rene Floor
@@ -23,6 +16,8 @@ import 'config/config.dart';
 /// Basic cache manager implementation, which should be used as a single
 /// instance.
 class CacheManager implements BaseCacheManager {
+  static CacheManagerLogLevel logLevel = CacheManagerLogLevel.none;
+
   /// Creates a new instance of a cache manager. This can be used to retrieve
   /// files from the cache or download them online. The http headers are used
   /// for the maximum age of the files. The BaseCacheManager should only be
@@ -67,9 +62,9 @@ class CacheManager implements BaseCacheManager {
 
   /// Get the file from the cache and/or online, depending on availability and age.
   /// Downloaded form [url], [headers] can be used for example for authentication.
-  /// When a file is cached it is return directly, when it is too old the file is
-  /// downloaded in the background. When a cached file is not available the
-  /// newly downloaded file is returned.
+  /// When a file is cached and up to date it is return directly, when the cached
+  /// file is too old the file is downloaded and returned after download.
+  /// When a cached file is not available the newly downloaded file is returned.
   @override
   Future<File> getSingleFile(
     String url, {
@@ -78,10 +73,7 @@ class CacheManager implements BaseCacheManager {
   }) async {
     key ??= url;
     final cacheFile = await getFileFromCache(key);
-    if (cacheFile != null) {
-      if (cacheFile.validTill.isBefore(DateTime.now())) {
-        unawaited(downloadFile(url, key: key, authHeaders: headers));
-      }
+    if (cacheFile != null && cacheFile.validTill.isAfter(DateTime.now())) {
       return cacheFile.file;
     }
     return (await downloadFile(url, key: key, authHeaders: headers)).file;
@@ -122,8 +114,13 @@ class CacheManager implements BaseCacheManager {
     return streamController.stream;
   }
 
-  Future<void> _pushFileToStream(StreamController streamController, String url,
-      String? key, Map<String, String>? headers, bool withProgress) async {
+  Future<void> _pushFileToStream(
+    StreamController<dynamic> streamController,
+    String url,
+    String? key,
+    Map<String, String>? headers,
+    bool withProgress,
+  ) async {
     key ??= url;
     FileInfo? cacheFile;
     try {
@@ -132,13 +129,14 @@ class CacheManager implements BaseCacheManager {
         streamController.add(cacheFile);
         withProgress = false;
       }
-    } catch (e) {
-      print(
-          'CacheManager: Failed to load cached file for $url with error:\n$e');
+    } on Object catch (e) {
+      cacheLogger.log(
+          'CacheManager: Failed to load cached file for $url with error:\n$e',
+          CacheManagerLogLevel.debug);
     }
     if (cacheFile == null || cacheFile.validTill.isBefore(DateTime.now())) {
       try {
-        await for (var response
+        await for (final response
             in _webHelper.downloadFile(url, key: key, authHeaders: headers)) {
           if (response is DownloadProgress && withProgress) {
             streamController.add(response);
@@ -147,18 +145,16 @@ class CacheManager implements BaseCacheManager {
             streamController.add(response);
           }
         }
-      } catch (e) {
-        assert(() {
-          print(
-              'CacheManager: Failed to download file from $url with error:\n$e');
-          return true;
-        }());
+      } on Object catch (e) {
+        cacheLogger.log(
+            'CacheManager: Failed to download file from $url with error:\n$e',
+            CacheManagerLogLevel.debug);
         if (cacheFile == null && streamController.hasListener) {
           streamController.addError(e);
         }
       }
     }
-    unawaited(streamController.close());
+    streamController.close();
   }
 
   ///Download the file and add to cache
@@ -168,7 +164,7 @@ class CacheManager implements BaseCacheManager {
       Map<String, String>? authHeaders,
       bool force = false}) async {
     key ??= url;
-    var fileResponse = await _webHelper
+    final fileResponse = await _webHelper
         .downloadFile(
           url,
           key: key,
@@ -222,7 +218,7 @@ class CacheManager implements BaseCacheManager {
 
     final file = await _config.fileSystem.createFile(cacheObject.relativePath);
     await file.writeAsBytes(fileBytes);
-    unawaited(_store.putFile(cacheObject));
+    _store.putFile(cacheObject);
     return file;
   }
 
@@ -255,16 +251,16 @@ class CacheManager implements BaseCacheManager {
       eTag: eTag,
     );
 
-    var file = await _config.fileSystem.createFile(cacheObject.relativePath);
+    final file = await _config.fileSystem.createFile(cacheObject.relativePath);
 
     // Always copy file
-    var sink = file.openWrite();
+    final sink = file.openWrite();
     await source
         // this map is need to map UInt8List to List<int>
         .map((event) => event)
         .pipe(sink);
 
-    unawaited(_store.putFile(cacheObject));
+    _store.putFile(cacheObject);
     return file;
   }
 

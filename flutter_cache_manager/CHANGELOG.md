@@ -1,11 +1,23 @@
+## [3.3.1] - 2023-07-03
+* Support Dart 3.0.0 for http ^1.0.0 and file ^7.0.0
+* Update example
+* Add topics
+
+## [3.3.0] - 2021-11-29
+* Added option to manage the log level. Doesn't print failed downloads by default anymore. You can set it like this:
+```dart
+CacheManager.logLevel = CacheManagerLogLevel.verbose;
+```
+
+## [3.2.0] - 2021-11-27
+* [Bugfix] getSingleFile now downloads a new file before completing as the outdated file might have been deleted.
+
 ## [3.1.3] - 2021-11-05
 * Disabled resizing of cached gifs as this was broken.
 
 ## [3.1.2] - 2021-06-17
-* removeFile function now completes after the file is removed from disk and not earlier ([#323](https://github.
-  com/Baseflow/flutter_cache_manager/pull/323))
-* Image resizing doesn't block ui anymore and doesn't use image package but existing Flutter components ([#319](https://github.
-  com/Baseflow/flutter_cache_manager/pull/319))
+* removeFile function now completes after the file is removed from disk and not earlier ([#323](https://github.com/Baseflow/flutter_cache_manager/pull/323))
+* Image resizing doesn't block ui anymore and doesn't use image package but existing Flutter components ([#319](https://github.com/Baseflow/flutter_cache_manager/pull/319))
 
 ## [3.1.1] - 2021-06-03
 * Move File to separate file. You can add it using the following import:
